@@ -1,7 +1,7 @@
 //
 //  ScreenSaver_Lines.ino
 //  Arduino Nano ESP32, 128x64 monochrome oled I2C
-//  Pin: SDA 20 SCL 21
+//  Pin: SDA0 20 SCL0 21   SDA1 47 SCL1 48
 //  Created by Peng Liu on 3/17/24.
 //
 
@@ -12,8 +12,10 @@
 #define WIDTH           128
 #define HEIGHT          64
 #define OLED_RESET      -1
-#define I2C_SDA         20
-#define I2C_SCL         21
+#define SDA_0           20
+#define SCL_0           21
+#define SDA_1           47
+#define SCL_1           48
 #define DISP_ADDRESS    0x3C
 
 #define MULTIPLIER      10
@@ -76,16 +78,18 @@ struct Band {
         }
     }
     
-    void drawLines(Adafruit_SSD1306* disp) {
+    void drawLines(Adafruit_SSD1306* disp0, Adafruit_SSD1306* disp1 = nullptr) {
         int16_t x[SECTIONS], y[SECTIONS], j;
         for (int16_t i = 0; i < SECTIONS; ++i) {
             x[i] = (dots[i].x + MULTIPLIER / 2) / MULTIPLIER;
             y[i] = (dots[i].y + MULTIPLIER / 2) / MULTIPLIER;
+            if (disp1 != nullptr)
+                disp1->drawCircle(x[i], y[i], RADIUS, SSD1306_WHITE);
         }
         
         for (int16_t i = 0; i < SECTIONS; ++i) {
             j = (i + 1) % SECTIONS;
-            disp->drawLine(x[i], y[i], x[j], y[j], SSD1306_WHITE);
+            disp0->drawLine(x[i], y[i], x[j], y[j], SSD1306_WHITE);
         }
     }
 };
@@ -95,28 +99,29 @@ Band bands[REPETITION];
 Band band;
 uint16_t currentIdx = 0;
 
-TwoWire* i2c;
-Adafruit_SSD1306* disp;
+TwoWire* i2c0;
+TwoWire* i2c1;
+Adafruit_SSD1306* disp0;
+Adafruit_SSD1306* disp1;
 
 void setup() {
     Serial.begin(115200);
     
-    i2c = new TwoWire(0);
+    i2c0 = new TwoWire(0);
+    i2c1 = new TwoWire(1);
     
-    if (i2c == nullptr) {
-        Serial.println(F("i2c init failed"));
-        for(;;);
+    i2c0->setPins(SDA_0, SCL_0);
+    i2c1->setPins(SDA_1, SCL_1);
+    disp0 = new Adafruit_SSD1306(WIDTH, HEIGHT, i2c0, OLED_RESET);
+    disp1 = new Adafruit_SSD1306(WIDTH, HEIGHT, i2c1, OLED_RESET);
+    
+    if(!disp0->begin(SSD1306_SWITCHCAPVCC, DISP_ADDRESS)) {
+        Serial.println(F("SSD1306_0 allocation failed"));
+        for(;;); // Don't proceed, loop forever
     }
-    i2c->setPins(I2C_SDA, I2C_SCL);
-    disp = new Adafruit_SSD1306(WIDTH, HEIGHT, i2c, OLED_RESET);
-    
-    if (disp == nullptr) {
-        Serial.println(F("disp init failed"));
-        for(;;);
-    }
-    
-    if(!disp->begin(SSD1306_SWITCHCAPVCC, DISP_ADDRESS)) {
-        Serial.println(F("SSD1306 allocation failed"));
+
+    if(!disp1->begin(SSD1306_SWITCHCAPVCC, DISP_ADDRESS)) {
+        Serial.println(F("SSD1306_1 allocation failed"));
         for(;;); // Don't proceed, loop forever
     }
 }
@@ -124,9 +129,11 @@ void setup() {
 void loop() {
     band.update();
     bands[++currentIdx % REPETITION] = band;
-    disp->clearDisplay();
+    disp0->clearDisplay();
+    disp1->clearDisplay();
     for (int16_t i = 0; i < REPETITION; ++i) {
-        bands[i].drawLines(disp);
+        bands[i].drawLines(disp0, disp1);
     }
-    disp->display();
+    disp0->display();
+    disp1->display();
 }
